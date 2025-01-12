@@ -6,8 +6,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#define MAPA_SIRKA 20
-#define MAPA_DLZKA 20
+#include <signal.h>
+
+#define MAPA_SIRKA 50
+#define MAPA_DLZKA 30
 
 #define MAX_HRACI 50
 #define HAD_MAX_DLZKA 100
@@ -128,31 +130,48 @@ void hadZjedolJedlo(Hra *hra, Had *had) {
   }
 }
 
-void kontrolujKolizieHada(Hra *hra, Had *had) {
+_Bool kontrolujKolizieHada(Hra *hra, Had *had) {
   int hadHlavaY = had->telo[0].y;
   int hadHlavaX = had->telo[0].x;
 
   if (hra->mapa.mapa[hadHlavaY][hadHlavaX] == '#') {
-	had->smer = 0;
-  //  printf("Musis lepsie ovladat hada, nabural si. Tvoje skore: %d .\n",had->skore);
 	had->zije = 0;  
 	for(int i = 0; i < had->dlzka; ++i) {
 		hra->mapa.mapa[had->telo[i].y][had->telo[i].x] = '+';
+		hra->mapa.mapa[hadHlavaY][hadHlavaX] = '+';
 	}
-	had->dlzka = 0; 
+	hra->mapa.mapa[hadHlavaY][hadHlavaX] = '#';
+	return true;
   }
-  if (hra->mapa.mapa[hadHlavaY][hadHlavaX] == '=') {
-    had->zije = 0;
-	had->smer = 0;
-   // printf("Pokusal si sa zjest hada. Tvoje skore: %d .\n", had->skore);
-	for(int i = 0; i < had->dlzka; ++i) {
-		hra->mapa.mapa[had->telo[i].y][had->telo[i].x] = '+';
+  
+  for(int i = 1; i < had->dlzka; ++i) {
+	if (had->telo[i].y == hadHlavaY && had->telo[i].x == hadHlavaX) {
+		had->zije = 0;	  
+		
+		for(int j = 0; j < had->dlzka; ++j) {
+			hra->mapa.mapa[had->telo[j].y][had->telo[j].x] = '+';
+		}
+	return true;
 	}
-	had->dlzka = 0;
   }
+  
+  for(int i = 0; i < hra->pocetHracov; ++i) {
+	  Had *druhy = &hra->hraci[i];
+	  if(druhy == had) continue;
+	  for (int j = 0; j < druhy->dlzka; ++j) {
+		  if(had->telo[j].y == hadHlavaY && had->telo[j].x == hadHlavaX) {
+			  had->zije = 0;
+			  for(int k = 0; k < had->dlzka; ++k) {
+				  hra->mapa.mapa[had->telo[k].y][had->telo[k].x] = '+';
+			  }
+			  return true;
+		  }
+	  }
+  }
+  return false;
 }
 
-void posunHada(Had *had) {
+void posunHada(Had *had, Hra *hra) {
   int x = 0;
   int y = 0;
   char smer = had->smer;
@@ -172,6 +191,23 @@ void posunHada(Had *had) {
   default:
     return;
   }
+  /*
+  if(had->zije) {
+      int novaX = had->telo[0].x + x;
+      int novaY = had->telo[0].y + y;
+      
+      // Skontrolovať, či nový smer je v rámci mapy
+      if(novaX < 0 || novaX >= MAPA_SIRKA || novaY < 0 || novaY >= MAPA_DLZKA) {
+          // Možno nastaviť had->zije = 0 alebo zmeniť smer, ak by ste chceli odraziť hada
+          return;
+      
+	  }
+  }  
+  */
+   if(kontrolujKolizieHada(hra, had)) {
+	   return;
+   }
+  
    if(had->zije) {		
 	for (int i = had->dlzka; i > 0; --i) {
 		had->telo[i] = had->telo[i - 1];
@@ -192,31 +228,25 @@ void nastavHru(Hra *hra) {
   hra->pocetHracov = 0;
 }
 
-void prestanOvladatMrtvehoHada(Had *had) {
-	if(!had->zije) {
-		had->zije = 0;
-		had->dlzka = 0;
-		had->smer = 0;
-	} 
-}
 
-void aktualizaciaHry(Hra *hra) {
+void aktualizaciaHry(Hra *hra, Had *had) {
 // printf("som v akt hr\n"); 
  nakresliMapu(hra);
 //  printf("kreslim mapu\n");
   for (int i = 0; i < hra->pocetHracov; ++i) {
-	if (hra->hraci[i].zije) {
-      posunHada(&hra->hraci[i]);
+	if(had->zije && !kontrolujKolizieHada(hra, &hra->hraci[i])) {
+      posunHada(&hra->hraci[i], hra);
       kontrolujKolizieHada(hra, &hra->hraci[i]);
       hadZjedolJedlo(hra, &hra->hraci[i]);
-    } 
+    }
+	
   }
+  
     for (int i = 0; i < hra->pocetHracov; ++i) {
       if (hra->hraci[i].zije) {
         nakresliHada(&hra->hraci[i], hra); 
       }
     }
-    
     // Jedlo sa tiež treba znova zakresliť, ak nebolo zjednuté
     if (!hra->jedlo.jeZjedene) {
       hra->mapa.mapa[hra->jedlo.y][hra->jedlo.x] = '+';
@@ -334,6 +364,7 @@ void *serverLoop(void *arg) {
 }
 
 int main(int argc, char **argv) {
+  signal(SIGINT, SIG_IGN); 
   int serverSocket = spustiServer();
   srand(time(NULL));
   Hra hra;
@@ -361,15 +392,15 @@ int main(int argc, char **argv) {
   //    printf("posielam thread\n");
     }
 //	printf("po threade threade \n");
-	aktualizaciaHry(&hra);
+	for(int i = 0; i < hra.pocetHracov; ++i) {
+		aktualizaciaHry(&hra, &hra.hraci[i]);
+	}
 //	printf("Po aktualizacii hry v maine\n");
     pthread_mutex_unlock(&hraMutex);
     usleep(200000);
   }
 //  printf("hra skoncila\n");
-  if(hra.pocetHracov <= 0) {
-	hra.bezi = 0;
-  }
+ 
   for (int i = 0; i < threadData.hra->pocetHracov; i++) {
     pthread_cancel(threadData.klienti[i].thread);
     pthread_join(threadData.klienti[i].thread, NULL);

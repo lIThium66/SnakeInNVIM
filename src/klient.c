@@ -4,9 +4,10 @@
 #include <stdatomic.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 
-#define MAPA_SIRKA 20
-#define MAPA_DLZKA 20
+#define MAPA_SIRKA 50
+#define MAPA_DLZKA 30
 
 #define MAX_HRACI 50
 #define HAD_MAX_DLZKA 100
@@ -105,28 +106,23 @@ void *socketThreadLoop(void *arg) {
     Hra hraServer;
    // printf("Som v data hra bezi.\n");
     int len = recv(data->socket, &hraServer, sizeof(Hra), 0);
-   // printf("Dostal som hru od servera.\n");
-    pthread_mutex_lock(data->hraMutex);
-	//puts("zamkol som hra mutex socketthreadloop");
-    if (len <= 0) {
-      data->hra->bezi = 0;
+	if (len <= 0) {
+     // data->hra->bezi = 0;
       break;
     }
+	pthread_mutex_lock(data->hraMutex);
     *data->hra = hraServer;
+	 vykresliMapu(data->hra);
     pthread_mutex_unlock(data->hraMutex);
-	//puts("odomkol som hra mutex socketthreadloop");
-    //printf("Som po mutexe a idem vykreslit mapu.\n");
-    //vypisHru(&hraServer); 
-	//puts("vypisujem");
-     vykresliMapu(data->hra);
-	//puts("vykresliMapu(data hra)");
   }
   return NULL;
 }
 
 int pripojSa(char *adresa, int port) {
   int klientSocket = socket(AF_INET, SOCK_STREAM, 0);
-
+  while(klientSocket < 0) {
+	  sleep(1);
+  }
   struct sockaddr_in addr =
       (struct sockaddr_in){AF_INET, htons(port), inet_addr(adresa)};
 
@@ -141,7 +137,6 @@ int pripojSa(char *adresa, int port) {
 void *inputLoop(void *arg) {
   thread_data *data = (thread_data *)arg;
   
- 
   while (data->hra->bezi) {
     char in;
     scanf("%c", &in);
@@ -164,6 +159,16 @@ void *inputLoop(void *arg) {
   return NULL;
 }
 
+void menu() {
+	  clear();
+	  mvprintw(0, 0, "========SLITHER========");
+	  mvprintw(1, 0, " 1. Vytvor hru");
+	  mvprintw(2, 0, " 2. Pripoj sa do hry");
+	  mvprintw(3, 0, " 3. Odist");
+	  mvprintw(4, 0, "=======================");
+	  refresh();
+}
+
 int main(int argc, char **argv) {
   initscr();
   cbreak();
@@ -173,13 +178,7 @@ int main(int argc, char **argv) {
 	
   int vyber = 0;
   while(1) {
-	  clear();
-	  mvprintw(0, 0, "========SLITHER========");
-	  mvprintw(1, 0, " 1. Vytvor hru");
-	  mvprintw(2, 0, " 2. Pripoj sa do hry");
-	  mvprintw(3, 0, " 3. Odist");
-	  mvprintw(4, 0, "=======================");
-	  refresh();
+	  menu();
 	  
 	  vyber = getch();
 	 if (vyber == '1') {
@@ -187,13 +186,13 @@ int main(int argc, char **argv) {
 		 if (childId == 0) {
 			 execl("./server", "slitherio_server", (char*) NULL);
 			 perror("execl chyba");
+			 mvprintw(0, 0, "Vytvaram server...");
 			 return 0;
 		 } else if (childId > 0) {
 			 clear();
-			 mvprintw(0, 0, "Vytvaram server...");
-			 sleep(2);
 			 mvprintw(1, 0, "Pripajam klienta..");
-			 sleep(1);
+			 refresh();
+			 sleep(2);
 			 break;
 		 } else {
 			 endwin();
@@ -209,9 +208,15 @@ int main(int argc, char **argv) {
 		 continue;
 	 }
   }
- 
- int klient = pripojSa("127.0.0.1", PORT);
 
+ int klient = -1;
+
+  while(klient < 0) {
+	  klient = pripojSa("127.0.0.1", PORT);
+	  if(klient < 0) {
+		  sleep(1);
+	  }
+  }
   Hra hra;
   hra.bezi = 1;
 
@@ -219,7 +224,7 @@ int main(int argc, char **argv) {
   //printf("ncurses inicializovane\n");
   int hracId;
   if (recv(klient, &hracId, sizeof(hracId), 0) <= 0) {
-    hra.bezi = 0;
+    //hra.bezi = 0;
 	//break;
   }
   //printf("Mam hracovo ID", hracId);
@@ -243,9 +248,10 @@ int main(int argc, char **argv) {
 
   while (hra.bezi) {
 //	printf("Som vo while main hra bezi\n");
+    sleep(1);
     pthread_mutex_lock(&hraMutex);
-  //  printf("%d\n", hra.pocetHracov);
-  //  printf("sirka: %d, dlzka: %d\n", hra.mapa.sirkaMapa, hra.mapa.dlzkaMapa);
+   //printf("%d\n", hra.pocetHracov);
+   //printf("sirka: %d, dlzka: %d\n", hra.mapa.sirkaMapa, hra.mapa.dlzkaMapa);
     /*
     for (int i = 0; i < hra.mapa.dlzkaMapa; i++) {
       for (int j = 0; j < hra.mapa.sirkaMapa; j++) {
@@ -255,10 +261,17 @@ int main(int argc, char **argv) {
     }
     printf("generoooo mapoo");
 	*/
-	//vykresliMapu(&hra);
+	vykresliMapu(&hra);
+	mvprintw(0, MAPA_SIRKA, "Tvoje skore: %d", hra.hraci[hracId].skore);
+    
+    for (int i = 0; i < hra.pocetHracov; ++i) {
+        mvprintw(0 + i + 1, MAPA_SIRKA + 3, "Hrac %d: %d", i, hra.hraci[i].skore);
+    }
+    
+    pthread_mutex_unlock(&hraMutex);
 	for (int i = 0; i < hra.pocetHracov; ++i) {
 		if(!hra.hraci[i].zije) {
-			mvprintw(MAPA_DLZKA + 5, 0, "Umrel si.\n");
+			mvprintw(MAPA_DLZKA, 0, "Umrel si.\n");
 		}
 	}
 
