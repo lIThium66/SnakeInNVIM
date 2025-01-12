@@ -1,56 +1,5 @@
-#include <arpa/inet.h>
-#include <ncurses.h>
-#include <pthread.h>
-#include <stdatomic.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <string.h>
-
-#define MAPA_SIRKA 50
-#define MAPA_DLZKA 30
-
-#define MAX_HRACI 50
-#define HAD_MAX_DLZKA 100
-
-#define PORT 6282
-
-typedef struct Telo {
-  int x, y;
-} Telo;
-
-typedef struct Had {
-  Telo telo[HAD_MAX_DLZKA];
-  int dlzka;
-  int skore;
-  _Bool zije;
-  char smer;
-} Had;
-
-typedef struct Mapa {
-  char mapa[MAPA_DLZKA][MAPA_SIRKA];
-  int sirkaMapa;
-  int dlzkaMapa;
-} Mapa;
-
-typedef struct Jedlo {
-  int x, y;
-  _Bool jeZjedene;
-} Jedlo;
-
-typedef struct Hra {
-  Mapa mapa;
-  Jedlo jedlo;
-  Had hraci[MAX_HRACI];
-  int pocetHracov;
-  atomic_bool bezi;
-} Hra;
-
-typedef struct thread_data {
-  Hra *hra;
-  pthread_mutex_t *hraMutex;
-  int socket;
-  int hracId;
-} thread_data;
+#include "sharedData.h"
+#include "klient.h"
 
 void vykresliHada(Hra* hra) {
 	for (int i = 0; i < hra->pocetHracov; ++i) {
@@ -213,9 +162,7 @@ int main(int argc, char **argv) {
 
   while(klient < 0) {
 	  klient = pripojSa("127.0.0.1", PORT);
-	  if(klient < 0) {
-		  sleep(1);
-	  }
+	  sleep(1);
   }
   Hra hra;
   hra.bezi = 1;
@@ -268,7 +215,7 @@ int main(int argc, char **argv) {
         mvprintw(0 + i + 1, MAPA_SIRKA + 3, "Hrac %d: %d", i, hra.hraci[i].skore);
     }
     
-    pthread_mutex_unlock(&hraMutex);
+   
 	for (int i = 0; i < hra.pocetHracov; ++i) {
 		if(!hra.hraci[i].zije) {
 			mvprintw(MAPA_DLZKA, 0, "Umrel si.\n");
